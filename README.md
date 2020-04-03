@@ -1,4 +1,4 @@
-# Automatic classification of tweets that mention medications
+# Automatic classification of medication mention in tweets
 
 <!-- @import "[TOC]" {cmd="toc" depthFrom=1 depthTo=6 orderedList=false} -->
 
