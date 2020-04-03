@@ -1,5 +1,4 @@
-# PyTorch Template Project
-PyTorch deep learning project made easy.
+# Automatic classification of tweets that mention medications
 
 <!-- @import "[TOC]" {cmd="toc" depthFrom=1 depthTo=6 orderedList=false} -->
 
