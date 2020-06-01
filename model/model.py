@@ -32,9 +32,31 @@ class BERTGRUModel(nn.Module):
         
         #input_id = [batch size, sent len]
 
-        with torch.no_grad():
+        #with torch.no_grad():
             #embedded = self.bert(input_ids, attention_mask=attention_mask)[0]
-            embedded = self.bert(input_ids, attention_mask=attention_mask)[1][-1]
+
+            # sum last four hidden layers
+            # last_four_hidden_layers = self.bert(input_ids, attention_mask=attention_mask)[1][-4:]
+            # embedded = last_four_hidden_layers[0] + last_four_hidden_layers[1] + last_four_hidden_layers[2] + last_four_hidden_layers[3]
+
+            # sum all 12 layers
+            # hidden_layers = self.bert(input_ids, attention_mask=attention_mask)[1]
+            # embedded = torch.zeros(hidden_layers[0].shape).to('cuda')
+            # for n in range(1, len(hidden_layers)):
+            #     embedded = embedded + hidden_layers[n]
+            
+            # first layer
+            # embedded = self.bert(input_ids, attention_mask=attention_mask)[1][0] 
+
+        # concat last 4 hidden layers
+        last_four_hidden_layers = self.bert(input_ids, attention_mask=attention_mask)[1][-4:]
+        embedded = torch.cat(last_four_hidden_layers,1) 
+
+        # use last hidden layer
+        # embedded = self.bert(input_ids, attention_mask=attention_mask)[1][-1] 
+
+            # use second-to-last hidden layer
+            # embedded = self.bert(input_ids, attention_mask=attention_mask)[1][-2] 
                 
         #embedded = [batch size, sent len, emb dim]
         _, hidden = self.rnn(embedded)
@@ -54,6 +76,56 @@ class BERTGRUModel(nn.Module):
         
         return output
 
+        
+class BERTGRUAttnModel(nn.Module):
+    def __init__(self, bert, hidden_size, output_size, n_layers, bidirectional, dropout):
+        super(BERTGRUAttnModel, self).__init__()
+
+        self.bert = bert
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        
+        self.embedding_dim = bert.config.to_dict()['hidden_size']
+
+        self.gru = nn.GRU(self.embedding_dim, 
+                          self.hidden_size, 
+                          num_layers=n_layers, 
+                          bidirectional = bidirectional,
+                          batch_first = True,
+                          dropout = 0 if n_layers < 2 else dropout)
+
+        self.dropout = nn.Dropout(dropout)
+
+        self.out = nn.Linear(self.hidden_size * 2 if bidirectional else self.hidden_size, self.output_size)
+
+    def attention(self, output, last_hidden_state):
+
+        hidden = last_hidden_state.squeeze(0)
+        attn_weights = torch.bmm(output, hidden.unsqueeze(2)).squeeze(2)
+        soft_attn_weights = F.softmax(attn_weights, 1)
+        new_hidden_state = torch.bmm(output.transpose(1, 2), soft_attn_weights.unsqueeze(2)).squeeze(2)
+
+        return new_hidden_state
+
+    def forward(self, input_ids, attention_mask):
+
+        with torch.no_grad():
+            embedded = self.bert(input_ids, attention_mask)[1][-1]
+        
+        hidden_outputs, hidden = self.gru(embedded)
+
+        if self.gru.bidirectional:
+            hidden = self.dropout(torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim = 1))
+        else:
+            hidden = self.dropout(hidden[-1,:,:])
+
+        #hidden_states = hidden_states.permute(1, 0, 2) # hidden_states.size() = (batch_size, num_seq, hidden_size)
+
+        attn = self.attention(hidden_outputs, hidden)
+
+        output = self.out(attn)
+
+        return output
 
 class CNN(nn.Module):
     def __init__(self, bert, n_filters, filter_sizes, output_dim, 
